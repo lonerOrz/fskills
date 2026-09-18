@@ -7,3 +7,7 @@ commit = "1e6eef8e989bf5d88bfa9ca29b50a472df795927"
 [[sources]]
 repo = "mattpocock/skills"
 commit = "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"
+
+[[sources]]
+repo = "longbridge/gpui-kit"
+commit = "6b8581a1e5458eace91beb842376f833beaef2ff"

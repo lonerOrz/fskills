@@ -40,7 +40,7 @@ jobs:
           NEEDS_SYNC=$(jq -r '.summary.needs_sync' /tmp/check_report.json)
           echo "needs_sync=$NEEDS_SYNC" >> $GITHUB_OUTPUT
 
-          # 渲染 Markdown 报告
+          # 渲染Markdown 报告
           python3 - <<'EOF'
           import json
 
@@ -70,21 +70,22 @@ jobs:
               "UPDATE": "**update**",
               "DESYNC": "**desync**",
               "UNLOCKED": "**unlocked**",
+              "LOCAL": "**local**",
           }
 
           for s in sources:
-              repo = f"`{s['repo']}`"
-              branch = f"`{s['branch']}`"
-              status = status_badge.get(s['status'], s['status'])
-              locked = f"`{s['locked_commit'][:8]}`" if s.get('locked_commit') else "none"
-              remote = f"`{s['remote_commit'][:8]}`"
+              repo = f"`{s['repo']}`" if s.get("repo") else f"`{s.get('path')}`"
+              branch = f"`{s['branch']}`" if s.get("branch") else "&mdash;"
+              status = status_badge.get(s.get("status", ""), s.get("status", ""))
+              locked = f"`{s['locked_commit'][:8]}`" if s.get("locked_commit") else "&mdash;"
+              remote = f"`{s['remote_commit'][:8]}`" if s.get("remote_commit") else "&mdash;"
 
               changes = []
               if s.get("missing_packages"):
                   changes.append(f"`+` add: {', '.join(f'`{p}`' for p in s['missing_packages'])}")
               if s.get("extra_packages"):
                   changes.append(f"`-` prune: {', '.join(f'`{p}`' for p in s['extra_packages'])}")
-              if s.get("locked_commit") != s.get("remote_commit"):
+              if s.get("locked_commit") and s.get("remote_commit") and s["locked_commit"] != s["remote_commit"]:
                   changes.append("`~` commit bump")
 
               change_str = "<br>".join(changes) if changes else "&mdash;"

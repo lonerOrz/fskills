@@ -22,19 +22,35 @@ LOCK_FILE = PROJECT_ROOT / "source.lock.toml"
 
 LOCK_VERSION = 1
 GITHUB_API = "https://api.github.com"
-USER_AGENT = "fskills-source/2.0"
+USER_AGENT = "fskills-source/2.1"
 
 
 class SourceError(Exception):
     """User-facing configuration or source resolution error."""
 
 
+# ---------------------------------------------------------------------------
+# Data Structures
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class SourceSpec:
-    repo: str
+    repo: str | None
+    path: Path | None
     branch: str | None
     target: Path
     selectors: tuple[str, ...]
+
+    @property
+    def is_local(self) -> bool:
+        return self.path is not None
+
+    @property
+    def identifier(self) -> str:
+        if self.path is not None:
+            return self.path.as_posix()
+        return cast(str, self.repo)
 
 
 @dataclass(frozen=True)
@@ -54,14 +70,20 @@ class RepositorySnapshot:
 @dataclass(frozen=True)
 class SourceState:
     spec: SourceSpec
-    branch: str
-    remote_commit: str
+    branch: str | None
+    remote_commit: str | None
     locked_commit: str | None
     packages: tuple[ResolvedPackage, ...]
     local_packages: tuple[str, ...]
 
     @property
+    def is_local(self) -> bool:
+        return self.spec.is_local
+
+    @property
     def commit_changed(self) -> bool:
+        if self.is_local:
+            return False
         return self.locked_commit != self.remote_commit
 
     @property
@@ -78,16 +100,22 @@ class SourceState:
 
     @property
     def extra_packages(self) -> tuple[str, ...]:
+        if self.is_local:
+            return ()
         expected = {package.name for package in self.packages}
         actual = set(self.local_packages)
         return tuple(sorted(actual - expected))
 
     @property
     def needs_sync(self) -> bool:
+        if self.is_local:
+            return False
         return self.locked_commit is None or self.commit_changed or self.local_changed
 
     @property
     def status(self) -> str:
+        if self.is_local:
+            return "LOCAL"
         if self.locked_commit is None:
             return "UNLOCKED"
         if self.commit_changed:
@@ -303,9 +331,9 @@ def parse_sources() -> tuple[SourceSpec, ...]:
     if not raw_items:
         fail("source.toml must contain at least one [[sources]] entry")
 
-    allowed_keys = {"repo", "branch", "target", "skills"}
+    allowed_keys = {"repo", "path", "branch", "target", "skills"}
     result: list[SourceSpec] = []
-    seen_repos: set[str] = set()
+    seen_identifiers: set[str] = set()
 
     for index, raw_value in enumerate(raw_items, start=1):
         raw = as_table(raw_value, context=f"sources[{index}]")
@@ -314,22 +342,13 @@ def parse_sources() -> tuple[SourceSpec, ...]:
             names = ", ".join(sorted(str(value) for value in unknown))
             fail(f"sources[{index}] has unknown field(s): {names}")
 
-        repo = parse_repo(raw.get("repo"))
-        if repo in seen_repos:
-            fail(f"repository declared more than once: {repo}")
-        seen_repos.add(repo)
+        has_repo = "repo" in raw
+        has_path = "path" in raw
 
-        branch_value = raw.get("branch")
-        branch = (
-            None
-            if branch_value is None
-            else as_string(branch_value, context=f"sources[{index}].branch")
-        )
-
-        target = normalize_relative_path(
-            as_string(raw.get("target", "skills/"), context=f"sources[{index}].target"),
-            field=f"sources[{index}].target",
-        )
+        if has_repo and has_path:
+            fail(f"sources[{index}] cannot specify both 'repo' and 'path'")
+        if not has_repo and not has_path:
+            fail(f"sources[{index}] must specify either 'repo' or 'path'")
 
         selectors = as_string_list(
             raw.get("skills", ["*"]),
@@ -338,14 +357,68 @@ def parse_sources() -> tuple[SourceSpec, ...]:
         for selector in selectors:
             validate_selector(selector)
 
-        result.append(
-            SourceSpec(
-                repo=repo,
-                branch=branch,
-                target=target,
-                selectors=selectors,
+        if has_repo:
+            repo = parse_repo(raw.get("repo"))
+            identifier = repo
+            if identifier in seen_identifiers:
+                fail(f"repository declared more than once: {repo}")
+            seen_identifiers.add(identifier)
+
+            branch_value = raw.get("branch")
+            branch = (
+                None
+                if branch_value is None
+                else as_string(branch_value, context=f"sources[{index}].branch")
             )
-        )
+
+            target = normalize_relative_path(
+                as_string(
+                    raw.get("target", "skills/"), context=f"sources[{index}].target"
+                ),
+                field=f"sources[{index}].target",
+            )
+
+            result.append(
+                SourceSpec(
+                    repo=repo,
+                    path=None,
+                    branch=branch,
+                    target=target,
+                    selectors=selectors,
+                )
+            )
+
+        else:
+            if "branch" in raw:
+                fail(f"sources[{index}] local source cannot specify 'branch'")
+
+            path = normalize_relative_path(
+                as_string(raw.get("path"), context=f"sources[{index}].path"),
+                field=f"sources[{index}].path",
+            )
+            identifier = path.as_posix()
+            if identifier in seen_identifiers:
+                fail(f"local path declared more than once: {identifier}")
+            seen_identifiers.add(identifier)
+
+            target = (
+                normalize_relative_path(
+                    as_string(raw.get("target"), context=f"sources[{index}].target"),
+                    field=f"sources[{index}].target",
+                )
+                if "target" in raw
+                else path
+            )
+
+            result.append(
+                SourceSpec(
+                    repo=None,
+                    path=path,
+                    branch=None,
+                    target=target,
+                    selectors=selectors,
+                )
+            )
 
     sources = tuple(result)
     validate_targets(sources)
@@ -353,15 +426,15 @@ def parse_sources() -> tuple[SourceSpec, ...]:
 
 
 def validate_targets(sources: tuple[SourceSpec, ...]) -> None:
-    items = [(source.target, source.repo) for source in sources]
-    for index, (target_a, repo_a) in enumerate(items):
-        for target_b, repo_b in items[index + 1 :]:
+    items = [(source.target, source.identifier) for source in sources]
+    for index, (target_a, id_a) in enumerate(items):
+        for target_b, id_b in items[index + 1 :]:
             parts_a = target_a.parts
             parts_b = target_b.parts
 
             if parts_a == parts_b:
                 fail(
-                    f"multiple sources use the same target {target_a}: {repo_a} and {repo_b}"
+                    f"multiple sources use the same target {target_a}: {id_a} and {id_b}"
                 )
 
             shorter, longer = (
@@ -371,7 +444,7 @@ def validate_targets(sources: tuple[SourceSpec, ...]) -> None:
             )
             if longer[: len(shorter)] == shorter:
                 fail(
-                    f"source targets overlap: {repo_a} -> {target_a} and {repo_b} -> {target_b}"
+                    f"source targets overlap: {id_a} -> {target_a} and {id_b} -> {target_b}"
                 )
 
 
@@ -414,7 +487,6 @@ def github_tokens() -> tuple[str, ...]:
 
 
 def drop_invalid_token(token: str) -> None:
-    global _VALID_TOKENS_CACHE  # noqa: PLW0602
     if _VALID_TOKENS_CACHE and token in _VALID_TOKENS_CACHE:
         _VALID_TOKENS_CACHE.remove(token)
 
@@ -505,7 +577,7 @@ def parse_api_tree(
 
 
 # ---------------------------------------------------------------------------
-# Git Remote State
+# Git Remote & Local Snapshot State
 # ---------------------------------------------------------------------------
 
 
@@ -600,6 +672,38 @@ def build_repository_snapshot(
     return RepositorySnapshot(
         branch=branch,
         commit=commit,
+        files=frozenset(files),
+        directories=frozenset(directories),
+    )
+
+
+def build_local_snapshot(path: Path) -> RepositorySnapshot:
+    """扫描本地自研路径构建同构快照，高内聚复用包解析算法。"""
+    full_path = PROJECT_ROOT / path
+    if not full_path.exists():
+        fail(f"local source path does not exist: {path.as_posix()}")
+    if not full_path.is_dir():
+        fail(f"local source path is not a directory: {path.as_posix()}")
+
+    files: set[PurePosixPath] = set()
+    directories: set[PurePosixPath] = set()
+
+    for root, _dirs, filenames in os.walk(full_path):
+        root_path = Path(root)
+        rel_root = root_path.relative_to(full_path)
+        if rel_root != Path("."):
+            directories.add(PurePosixPath(rel_root.as_posix()))
+
+        for filename in filenames:
+            rel_file = PurePosixPath((rel_root / filename).as_posix())
+            files.add(rel_file)
+            for parent in rel_file.parents:
+                if parent != PurePosixPath("."):
+                    directories.add(parent)
+
+    return RepositorySnapshot(
+        branch="local",
+        commit="local",
         files=frozenset(files),
         directories=frozenset(directories),
     )
@@ -800,11 +904,13 @@ def toml_string(value: str) -> str:
 def render_lock(states: tuple[SourceState, ...]) -> str:
     lines = [f"version = {LOCK_VERSION}", ""]
     for state in states:
+        if state.is_local:
+            continue
         lines.extend(
             [
                 "[[sources]]",
-                f"repo = {toml_string(state.spec.repo)}",
-                f"commit = {toml_string(state.remote_commit)}",
+                f"repo = {toml_string(cast(str, state.spec.repo))}",
+                f"commit = {toml_string(cast(str, state.remote_commit))}",
                 "",
             ]
         )
@@ -852,16 +958,30 @@ def build_source_state(
     spec: SourceSpec,
     locked_commits: dict[str, str],
 ) -> SourceState:
-    branch, remote_commit = resolve_repo_remote_head(spec.repo, spec.branch)
-    snapshot = build_repository_snapshot(spec.repo, branch, remote_commit)
-    packages = resolve_packages(snapshot, spec.selectors)
     target = PROJECT_ROOT / spec.target
+
+    if spec.is_local:
+        snapshot = build_local_snapshot(cast(Path, spec.path))
+        packages = resolve_packages(snapshot, spec.selectors)
+        return SourceState(
+            spec=spec,
+            branch=None,
+            remote_commit=None,
+            locked_commit=None,
+            packages=packages,
+            local_packages=local_package_names(target),
+        )
+
+    repo = cast(str, spec.repo)
+    branch, remote_commit = resolve_repo_remote_head(repo, spec.branch)
+    snapshot = build_repository_snapshot(repo, branch, remote_commit)
+    packages = resolve_packages(snapshot, spec.selectors)
 
     return SourceState(
         spec=spec,
         branch=branch,
         remote_commit=remote_commit,
-        locked_commit=locked_commits.get(spec.repo),
+        locked_commit=locked_commits.get(repo),
         packages=packages,
         local_packages=local_package_names(target),
     )
@@ -881,13 +1001,13 @@ def validate_destination_collisions(states: tuple[SourceState, ...]) -> None:
             destination = state.spec.target / package.name
             previous = destinations.get(destination)
             if previous is not None:
-                first_repo, first_path = previous
+                first_id, first_path = previous
                 fail(
                     f"skill destination collision: {destination.as_posix()}\n"
-                    f"  first: {first_repo}:{first_path.as_posix()}\n"
-                    f"  second: {state.spec.repo}:{package.source_path.as_posix()}"
+                    f"  first: {first_id}:{first_path.as_posix()}\n"
+                    f"  second: {state.spec.identifier}:{package.source_path.as_posix()}"
                 )
-            destinations[destination] = (state.spec.repo, package.source_path)
+            destinations[destination] = (state.spec.identifier, package.source_path)
 
 
 # ---------------------------------------------------------------------------
@@ -978,7 +1098,9 @@ def short_commit(commit: str | None) -> str:
 
 def state_to_dict(state: SourceState) -> dict[str, object]:
     return {
+        "type": "local" if state.is_local else "remote",
         "repo": state.spec.repo,
+        "path": state.spec.path.as_posix() if state.spec.path is not None else None,
         "branch": state.branch,
         "remote_commit": state.remote_commit,
         "locked_commit": state.locked_commit,
@@ -996,10 +1118,16 @@ def state_to_dict(state: SourceState) -> dict[str, object]:
 
 
 def print_state(state: SourceState) -> None:
-    print(f"Source: {state.spec.repo}")
-    print(f"  branch: {state.branch}")
-    print(f"  remote: {short_commit(state.remote_commit)}")
-    print(f"  locked: {short_commit(state.locked_commit)}")
+    source_label = (
+        f"{state.spec.identifier} (local)" if state.is_local else state.spec.identifier
+    )
+    print(f"Source: {source_label}")
+
+    if not state.is_local:
+        print(f"  branch: {state.branch}")
+        print(f"  remote: {short_commit(state.remote_commit)}")
+        print(f"  locked: {short_commit(state.locked_commit)}")
+
     print(f"  target: {state.spec.target.as_posix()}/")
     print(f"  status: {state.status}")
 
@@ -1034,10 +1162,15 @@ def cmd_check(*, as_json: bool = False) -> int:
         locked = load_lock()
         states = resolve_sources(locked)
 
-        configured_repos = {state.spec.repo for state in states}
-        stale_lock = sorted(set(locked) - configured_repos)
+        configured_remote_repos = {s.spec.repo for s in states if not s.is_local}
+        stale_lock = sorted(set(locked) - configured_remote_repos)
+
         updates = [state for state in states if state.commit_changed]
-        unlocked = [state for state in states if state.locked_commit is None]
+        unlocked = [
+            state
+            for state in states
+            if not state.is_local and state.locked_commit is None
+        ]
         desynced = [state for state in states if state.local_changed]
         needs_sync = any(state.needs_sync for state in states) or bool(stale_lock)
 
@@ -1085,11 +1218,17 @@ def cmd_update() -> int:
         states = resolve_sources(locked)
 
         changed = tuple(state for state in states if state.needs_sync)
-        configured_repos = {state.spec.repo for state in states}
-        stale_lock = sorted(set(locked) - configured_repos)
+        configured_remote_repos = {s.spec.repo for s in states if not s.is_local}
+        stale_lock = sorted(set(locked) - configured_remote_repos)
 
         print("Update plan:")
         for state in states:
+            if state.is_local:
+                action = "SKIP"
+                reason = "local source"
+                print(f"  {action:4} {state.spec.identifier:32} ({reason})")
+                continue
+
             if not state.needs_sync:
                 action = "SKIP"
                 reason = "up-to-date"
@@ -1107,7 +1246,7 @@ def cmd_update() -> int:
                 reason = ", ".join(reasons)
 
             print(
-                f"  {action:4} {state.spec.repo:32} "
+                f"  {action:4} {state.spec.identifier:32} "
                 f"{short_commit(state.locked_commit)} -> {short_commit(state.remote_commit)} "
                 f"({reason})"
             )
@@ -1132,8 +1271,12 @@ def cmd_update() -> int:
 
             for index, state in enumerate(changed):
                 repo_dest = transaction_root / "repos" / f"repo-{index}"
-                print(f"Fetching {state.spec.repo}@{state.branch}...")
-                clone_full_repository(state.spec.repo, state.branch, repo_dest)
+                print(f"Fetching {state.spec.identifier}@{cast(str, state.branch)}...")
+                clone_full_repository(
+                    cast(str, state.spec.repo),
+                    cast(str, state.branch),
+                    repo_dest,
+                )
 
                 staged_target = stage_source(
                     state, repo_dest, transaction_root / "staging"
@@ -1155,33 +1298,36 @@ def cmd_update() -> int:
 
 
 def cmd_link(destination_str: str, *, force: bool = False) -> int:
-    """将每个 source target 下的每一个具体 skill 文件夹软链接到 destination_str。"""
+    """严格依据所有 sources (包含远程与本地自研) 选择器解析出的激活包建立软链接。"""
     dest_path = Path(destination_str).expanduser().resolve()
     if not dest_path.exists():
         dest_path.mkdir(parents=True, exist_ok=True)
     elif not dest_path.is_dir():
         fail(f"destination exists but is not a directory: {dest_path}")
 
-    sources = parse_sources()
-    expected_links: dict[str, Path] = {}  # skill_name -> source_abs_path
+    # 解析所有合法声明的源与激活包
+    locked = load_lock()
+    states = resolve_sources(locked)
 
-    for spec in sources:
-        target_dir = (PROJECT_ROOT / spec.target).resolve()
-        if not target_dir.is_dir():
-            continue
+    expected_links: dict[str, Path] = {}  # package_name -> abs_pkg_path
 
-        for entry in sorted(target_dir.iterdir()):
-            if entry.is_dir() and not entry.name.startswith("."):
-                skill_name = entry.name
-                if skill_name in expected_links:
-                    first = expected_links[skill_name].relative_to(PROJECT_ROOT)
-                    second = entry.relative_to(PROJECT_ROOT)
-                    fail(
-                        f"skill name collision when linking to destination: {skill_name!r}\n"
-                        f"  first:  {first}\n"
-                        f"  second: {second}"
-                    )
-                expected_links[skill_name] = entry
+    for state in states:
+        target_dir = (PROJECT_ROOT / state.spec.target).resolve()
+        # 仅遍历当前被 selectors (如 skills = [...]) 激活命中的包
+        for package in state.packages:
+            pkg_path = (target_dir / package.name).resolve()
+            if not pkg_path.is_dir():
+                continue
+
+            if package.name in expected_links:
+                first = expected_links[package.name].relative_to(PROJECT_ROOT)
+                second = pkg_path.relative_to(PROJECT_ROOT)
+                fail(
+                    f"skill name collision when linking: {package.name!r}\n"
+                    f"  first:  {first}\n"
+                    f"  second: {second}"
+                )
+            expected_links[package.name] = pkg_path
 
     print(f"Linking {len(expected_links)} skills to {dest_path.as_posix()}/")
 
@@ -1191,6 +1337,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
 
     project_root_resolved = PROJECT_ROOT.resolve()
 
+    # 清理死链或在 --force 下强制排他清理
     for entry in sorted(dest_path.iterdir()):
         entry_name = entry.name
 
@@ -1204,6 +1351,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
                 is_pointing_to_fskills = False
 
             if entry_name not in expected_links:
+                # 指向本项目但不再激活的旧软链默认清理；外部软链仅在 --force 时清理
                 if is_pointing_to_fskills or force:
                     print(f"  - prune link: {entry_name}")
                     entry.unlink()
@@ -1212,7 +1360,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
 
         elif entry_name in expected_links:
             if force:
-                print(f"  - force remove existing item: {entry_name}")
+                print(f"  - force remove existing non-symlink: {entry_name}")
                 shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
                 pruned += 1
             else:
@@ -1221,6 +1369,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
                     f"  use --force to overwrite and remove existing non-symlink items."
                 )
 
+    # 建立软链接
     for skill_name, src_path in expected_links.items():
         link_target = dest_path / skill_name
 
@@ -1228,7 +1377,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
             try:
                 current_src = link_target.resolve()
                 if current_src == src_path:
-                    continue  # 已正确链接，跳过
+                    continue
             except (OSError, RuntimeError):
                 pass
             link_target.unlink()

@@ -1,38 +1,41 @@
-# Skill sources
+# Skill Sources Specification
 #
-# repo:
-#   GitHub repository in the form:
-#   owner/repository
+# A source can be either REMOTE (fetched from GitHub) or LOCAL (authored in this repo).
+# Each [[sources]] table must define either 'repo' or 'path', but not both.
 #
-# branch:
-#   Git branch to sync.
-#   If omitted, use the repository's default branch.
+# ------------------------------------------------------------------------------
+# Remote Source Fields:
+#   repo:
+#     GitHub repository in "owner/repository" format. (Required for remote)
+#   branch:
+#     Git branch to track. If omitted, uses the remote's default branch.
+#   target:
+#     Local destination directory. If omitted, defaults to "skills/".
+#   skills:
+#     Package selectors relative to the remote repo root. Defaults to ["*"].
 #
-# target:
-#   Local destination directory.
-#   If omitted, defaults to "skills/".
-#   The directory is created automatically if needed.
+# Local Source Fields:
+#   path:
+#     Local directory path relative to project root. (Required for local)
+#     Does not perform remote fetch, clone, or write to source.lock.toml.
+#   target:
+#     Destination directory for identification. Defaults to the same as 'path'.
+#   skills:
+#     Package selectors relative to 'path'. Defaults to ["*"].
 #
-# skills:
-#   Selectors relative to the repository root.
-#   If omitted, defaults to ["*"].
+# ------------------------------------------------------------------------------
+# Supported Selectors:
+#   "*"                -> recursively discover all directories containing SKILL.md
+#   "path/*"           -> search direct child directories under path
+#   "path/to/skill"    -> exact match for a directory containing SKILL.md
+#   "path/^regex.*$"   -> regex-match direct child directories
 #
-# Supported selectors:
-#   "*"                    -> recursively find all SKILL.md files
-#   "path/*"               -> search direct child directories under path
-#   "path/to/skill"        -> search this directory for SKILL.md
-#   "path/^pattern.*$"     -> regex-match direct child directories
-#
-# A directory is considered a skill when it contains SKILL.md.
-#
-# When SKILL.md is inside a "skill/" directory, the parent directory
-# is treated as the skill package root.
-#
-# The entire skill package is copied to:
-#   <target>/<package-name>/
+# Rule: A directory is considered a skill package if it contains SKILL.md.
+# When SKILL.md is inside a "skill/" directory, its parent is the package root.
+# ------------------------------------------------------------------------------
 
 
-# Sync all discoverable skill packages from Mic92.
+# Sync selected skill packages from Mic92.
 [[sources]]
 repo = "Mic92/mics-skills"
 target = "skills/mic92"
@@ -51,5 +54,20 @@ skills = [
     "skills/engineering/*",
     "skills/productivity/*",
     "skills/in-progress/pr",
-    "skills/productivity/*",
 ]
+
+
+# Sync selected skill packages from Matt Pocock.
+[[sources]]
+repo = "longbridge/gpui-kit"
+target = "skills/gpui"
+skills = [
+    "skills/*",
+]
+
+
+# Local self-authored skills (tracked directly in this repository).
+# Never fetched, never locked; validated on 'check' and linked on 'link'.
+[[sources]]
+path = "skills/loner"
+skills = ["*"]
