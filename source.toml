@@ -1,0 +1,54 @@
+# Skill sources
+#
+# repo:
+#   GitHub repository in the form:
+#   owner/repository
+#
+# branch:
+#   Git branch to sync.
+#   If omitted, use the repository's default branch.
+#
+# target:
+#   Local destination directory.
+#   If omitted, defaults to "skills/".
+#   The directory is created automatically if needed.
+#
+# skills:
+#   Selectors relative to the repository root.
+#   If omitted, defaults to ["*"].
+#
+# Supported selectors:
+#   "*"                    -> recursively find all SKILL.md files
+#   "path/*"               -> search direct child directories under path
+#   "path/to/skill"        -> search this directory for SKILL.md
+#   "path/^pattern.*$"     -> regex-match direct child directories
+#
+# A directory is considered a skill when it contains SKILL.md.
+#
+# When SKILL.md is inside a "skill/" directory, the parent directory
+# is treated as the skill package root.
+#
+# The entire skill package is copied to:
+#   <target>/<package-name>/
+
+
+# Sync all discoverable skill packages from Mic92.
+[[sources]]
+repo = "Mic92/mics-skills"
+target = "skills/mic92"
+skills = [
+    "context7-cli",
+    "kagi-search",
+]
+
+
+# Sync selected skill packages from Matt Pocock.
+[[sources]]
+repo = "mattpocock/skills"
+target = "skills/matt"
+skills = [
+    "skills/engineering/research",
+    "skills/engineering/implement",
+    "skills/engineering/code-review",
+    "skills/productivity/*",
+]

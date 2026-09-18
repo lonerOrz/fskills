@@ -1,0 +1,10 @@
+pull_request_rules:
+  - name: automatic merge for upstream skills sync
+    conditions:
+      - head = sync-upstream-skills
+      - label = automated-sync
+    actions:
+      merge:
+        method: squash
+        commit_message: title+body
+      delete_head_branch: {}

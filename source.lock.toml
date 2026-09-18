@@ -1,0 +1,9 @@
+version = 1
+
+[[sources]]
+repo = "Mic92/mics-skills"
+commit = "1e6eef8e989bf5d88bfa9ca29b50a472df795927"
+
+[[sources]]
+repo = "mattpocock/skills"
+commit = "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"
