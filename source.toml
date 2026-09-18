@@ -37,6 +37,7 @@
 repo = "Mic92/mics-skills"
 target = "skills/mic92"
 skills = [
+    "browser-cli",
     "context7-cli",
     "kagi-search",
 ]
@@ -47,8 +48,8 @@ skills = [
 repo = "mattpocock/skills"
 target = "skills/matt"
 skills = [
-    "skills/engineering/research",
-    "skills/engineering/implement",
-    "skills/engineering/code-review",
+    "skills/engineering/*",
+    "skills/productivity/*",
+    "skills/in-progress/pr",
     "skills/productivity/*",
 ]

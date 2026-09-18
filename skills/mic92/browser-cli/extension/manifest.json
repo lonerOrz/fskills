@@ -1,0 +1,49 @@
+{
+  "manifest_version": 2,
+  "name": "Browser CLI Controller",
+  "version": "1.2.1",
+  "description": "Control your browser from the command line",
+
+  "applications": {
+    "gecko": {
+      "id": "browser-cli-controller@thalheim.io",
+      "strict_min_version": "57.0"
+    }
+  },
+
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "webNavigation",
+    "nativeMessaging",
+    "<all_urls>",
+    "downloads",
+    "storage",
+    "contextMenus"
+  ],
+
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["console-capture.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+
+  "browser_action": {
+    "default_title": "Browser CLI Controller",
+    "default_icon": {
+      "48": "icon.png"
+    }
+  },
+
+  "icons": {
+    "48": "icon.png"
+  }
+}

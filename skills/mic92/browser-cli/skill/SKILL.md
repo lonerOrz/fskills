@@ -1,0 +1,84 @@
+---
+name: browser-cli
+description: Control Firefox browser from the command line. Use for web automation, scraping, testing, or any browser interaction tasks.
+---
+
+# Usage
+
+```bash
+TAB=$(browser-cli --go "https://example.com")  # tab ID on stdout
+browser-cli $TAB <<< 'snap()'                  # execute JS in that tab
+browser-cli --list                             # TSV: id⇥*⇥url⇥title
+browser-cli --list --json                      # machine-readable
+```
+
+# JavaScript API
+
+Actions return confirmations; use `snap()` to get page state. Refs `[N]` come
+from `snap()` output. CSS selectors also work: `click("#submit")`,
+`click("Sign In", "text")`.
+
+```javascript
+// Interaction
+await click(1)                       // also: {double: true}
+await type(2, "text")                // also: {clear: true}
+await hover(3)
+await drag(4, 5)
+await select(6, "value")
+key("Enter")
+
+// Inspection
+snap()                               // full snapshot first call,
+                                     // diff vs previous on later calls
+snap({full: true})                   // force full snapshot
+snap({interactive: true})            // only buttons/links/inputs (cheap)
+snap({forms|links|buttons: true})    // filter by type (always full)
+snap({text: "login"})                // filter by text (always full)
+get(1, "text")                       // text|html|value|attr:name|count
+is(2, "visible")                     // visible|enabled|checked -> bool
+logs()                               // console logs
+
+// Waiting
+await wait(1000)                     // ms
+await wait("idle")                   // DOM stable
+await wait("text", "Success")        // text appears
+await wait("gone", "Loading")        // text disappears
+
+// Other
+scroll("down")                       // also: up|top|bottom, or scroll(ref)
+await upload(3, "/path/to/file.pdf") // <input type=file> (chunked, any size)
+await download(url, "file.pdf")      // -> ~/Downloads/
+await shot("/tmp/page.png")          // screenshot (omit path for data URL)
+read()                               // article text via Readability
+                                     // opts: {maxLength, includeMetadata}
+```
+
+Alternative to `read()`: `curl -sL "https://r.jina.ai/$URL"` returns clean
+markdown without a browser tab — prefer for public static articles/docs.
+
+# Snapshot Format
+
+```
+[1] heading "Welcome"
+[2] input[email] "Email" [required]
+[3] button "Sign In"
+```
+
+`[N]` = ref for click/type/etc. Shows role, name, and attrs like `[disabled]`,
+`[checked]`, `[required]`.
+
+# Example: Login Flow
+
+```bash
+TAB=$(browser-cli --go "https://example.com/login")
+browser-cli $TAB <<< 'snap()'
+# [1] input "Email"  [2] input "Password"  [3] button "Sign In"
+
+browser-cli $TAB <<'EOF'
+await type(1, "user@test.com")
+await type(2, "secret123")
+await click(3)
+await wait("text", "Welcome")
+snap()
+EOF
+```

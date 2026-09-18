@@ -1,0 +1,446 @@
+"""Command-line interface for browser-cli.
+
+Provides a minimal interface similar to pexpect-cli:
+- Execute JavaScript directly via stdin
+- List managed tabs
+- install-host for setup
+"""
+
+import argparse
+import asyncio
+import json
+import logging
+import shutil
+import sys
+from pathlib import Path
+from typing import Any
+
+from browser_cli.client import BrowserClient
+from browser_cli.config import get_firefox_path
+from browser_cli.errors import BrowserCLIError
+
+
+def install_native_host() -> None:
+    """Install native messaging host for Firefox."""
+    if not shutil.which("browser-cli-server"):
+        print("Error: browser-cli-server not found in PATH", file=sys.stderr)
+        sys.exit(1)
+
+    home = Path.home()
+
+    # Firefox requires an absolute path in the native-messaging manifest,
+    # but the resolved path from shutil.which() is a nix store path that
+    # goes stale after nix-collect-garbage. Indirect through a wrapper
+    # that resolves the binary via PATH at runtime.
+    wrapper_dir = home / ".local" / "bin"
+    wrapper_dir.mkdir(parents=True, exist_ok=True)
+    wrapper_path = wrapper_dir / "browser-cli-server-wrapper"
+
+    wrapper_content = """#!/usr/bin/env bash
+exec browser-cli-server "$@"
+"""
+    wrapper_path.write_text(wrapper_content)
+    wrapper_path.chmod(0o755)
+
+    host_dirs = []
+    if sys.platform == "darwin":
+        app_support = home / "Library" / "Application Support"
+        host_dirs.append(app_support / "Mozilla" / "NativeMessagingHosts")
+        host_dirs.append(app_support / "LibreWolf" / "NativeMessagingHosts")
+    else:
+        host_dirs.append(home / ".mozilla" / "native-messaging-hosts")
+        host_dirs.append(home / ".librewolf" / "native-messaging-hosts")
+
+    for host_dir in host_dirs:
+        host_dir.mkdir(parents=True, exist_ok=True)
+        host_file = host_dir / "io.thalheim.browser_cli.bridge.json"
+
+        manifest = {
+            "name": "io.thalheim.browser_cli.bridge",
+            "description": "Browser CLI Bridge Server",
+            "path": str(wrapper_path),
+            "type": "stdio",
+            "allowed_extensions": ["browser-cli-controller@thalheim.io"],
+        }
+
+        with host_file.open("w") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Native messaging host installed successfully at {host_file}")
+    print(f"Using wrapper script at: {wrapper_path}")
+
+
+def _format_element(el: dict[str, Any]) -> str:
+    """Format a single element for display."""
+    line = f"[{el['ref']}] {el['role']}"
+    if el.get("name"):
+        line += f' "{el["name"]}"'
+    if el.get("attrs"):
+        line += f" [{', '.join(el['attrs'])}]"
+    if el.get("value") is not None:
+        line += f' value="{el["value"]}"'
+    return line
+
+
+def _format_diff_section(
+    lines: list[str],
+    label: str,
+    items: list[dict[str, Any]],
+    prefix: str,
+) -> None:
+    """Format a diff section (added/removed)."""
+    if not items:
+        return
+    lines.extend(["", f"{label} ({len(items)}):"])
+    lines.extend(f"  {prefix} {_format_element(el)}" for el in items)
+
+
+def _format_diff(result: dict[str, Any]) -> str | None:
+    """Format a SnapshotDiff for display. Returns None if not a diff."""
+    if "added" not in result or "removed" not in result or "changed" not in result:
+        return None
+
+    added, removed, changed = result["added"], result["removed"], result["changed"]
+    url_changed, title_changed = result.get("urlChanged"), result.get("titleChanged")
+
+    if not (url_changed or title_changed or added or removed or changed):
+        return "No changes"
+
+    lines: list[str] = []
+
+    if url_changed:
+        lines.append(f"URL: {result['oldUrl']} → {result['newUrl']}")
+    if title_changed:
+        lines.append(f'Title: "{result["oldTitle"]}" → "{result["newTitle"]}"')
+
+    _format_diff_section(lines, "Added", added, "+")
+    _format_diff_section(lines, "Removed", removed, "-")
+
+    if changed:
+        lines.extend(["", f"Changed ({len(changed)}):"])
+        for item in changed:
+            lines.append(f"  ~ {_format_element(item['element'])}")
+            lines.extend(f"      {c}" for c in item["changes"])
+
+    return "\n".join(lines)
+
+
+def _format_reader_result(result: dict[str, Any]) -> str | None:
+    """Format a reader mode result for display. Returns None if not a reader result."""
+    # Reader mode results have: title, content, length (required)
+    # Optional: byline, siteName, publishedTime
+    if "content" not in result or "length" not in result:
+        return None
+
+    # Must have content as a string (not elements array like snapshot)
+    if not isinstance(result.get("content"), str):
+        return None
+
+    lines: list[str] = []
+
+    # Header with metadata
+    if result.get("title"):
+        lines.append(result["title"])
+        lines.append("=" * len(result["title"]))
+
+    if result.get("byline"):
+        lines.append(f"By: {result['byline']}")
+
+    if result.get("siteName"):
+        lines.append(f"Source: {result['siteName']}")
+
+    if result.get("publishedTime"):
+        lines.append(f"Published: {result['publishedTime']}")
+
+    # Add separator before content if we had any metadata
+    if lines:
+        lines.append("")
+        lines.append("-" * 40)
+        lines.append("")
+
+    # Main content
+    lines.append(result["content"])
+
+    return "\n".join(lines)
+
+
+def _format_snapshot_dict(result: dict[str, Any]) -> str | None:
+    """Format a snapshot dict for display. Returns None if not a snapshot."""
+    # Check if it's a reader mode result
+    reader_result = _format_reader_result(result)
+    if reader_result is not None:
+        return reader_result
+
+    # Check if it's a SnapshotDiff object
+    diff_result = _format_diff(result)
+    if diff_result is not None:
+        return diff_result
+
+    # Check if it's a Snapshot object
+    if "url" in result and "title" in result and "elements" in result:
+        lines = [f"Page: {result['title']}", f"URL: {result['url']}", ""]
+        lines.extend(_format_element(el) for el in result["elements"])
+        return "\n".join(lines)
+
+    # Check if it's a single element
+    if "ref" in result and "role" in result:
+        return _format_element(result)
+
+    return None
+
+
+def _format_element_list(result: list[Any]) -> str | None:
+    """Format a list of elements for display. Returns None if not element list."""
+    if not result or not isinstance(result[0], dict):
+        return None
+
+    if "ref" not in result[0] or "role" not in result[0]:
+        return None
+
+    return "\n".join(_format_element(el) for el in result)
+
+
+def format_snapshot(
+    result: dict[str, object] | list[object] | str | float | None,
+) -> str:
+    """Format a snapshot result for display."""
+    if result is None:
+        return ""
+
+    if isinstance(result, str):
+        return result
+
+    if isinstance(result, dict):
+        formatted = _format_snapshot_dict(result)
+        if formatted is not None:
+            return formatted
+
+    # For arrays of elements
+    if isinstance(result, list):
+        formatted = _format_element_list(result)
+        if formatted is not None:
+            return formatted
+
+    # Default: JSON format
+    return json.dumps(result, indent=2)
+
+
+async def exec_js(
+    tab_id: str | None,
+    code: str,
+    socket: str | None,
+    firefox_path: str | None = None,
+) -> None:
+    """Execute JavaScript code in a browser tab."""
+    client = BrowserClient(socket, firefox_path=firefox_path)
+    result = await client.exec_js(code, tab_id)
+    if result is not None:
+        print(format_snapshot(result))
+
+
+async def navigate_tab(
+    tab_id: str | None,
+    url: str,
+    socket: str | None,
+    firefox_path: str | None = None,
+) -> None:
+    """Navigate a tab to a URL and wait for load.
+
+    If no tab_id is given and no managed tab exists, the extension
+    creates a new tab. We print its ID so the user can target it in
+    subsequent commands.
+    """
+    client = BrowserClient(socket, firefox_path=firefox_path)
+    result = await client.send_command("go", {"url": url}, tab_id)
+    # The extension always returns the tab ID it acted on. Print exactly
+    # that to stdout so `TAB=$(browser-cli --go ...)` works regardless of
+    # whether a tab was created or reused; prose goes to stderr.
+    final_id = result.get("tabId") or tab_id
+    if final_id and final_id != tab_id:
+        print(f"Opened {url} in new tab {final_id}", file=sys.stderr)
+    else:
+        print(f"Navigated to {url}", file=sys.stderr)
+    if final_id:
+        print(final_id)
+
+
+async def list_tabs(
+    socket: str | None,
+    firefox_path: str | None = None,
+    *,
+    as_json: bool = False,
+) -> None:
+    """List all managed tabs."""
+    client = BrowserClient(socket, firefox_path=firefox_path)
+    tabs = await client.list_tabs()
+    if as_json:
+        print(json.dumps(tabs))
+        return
+    if not tabs:
+        print("No managed tabs", file=sys.stderr)
+        return
+    for tab in tabs:
+        tab_id = tab.get("id", "unknown")
+        url = tab.get("url", "about:blank")
+        title = tab.get("title", "Untitled")
+        active = "*" if tab.get("active") else " "
+        # ID first, fixed-width, tab-separated: parseable with `cut -f1`.
+        print(f"{tab_id}\t{active}\t{url}\t{title}")
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser."""
+    parser = argparse.ArgumentParser(
+        description="Control Firefox browser from the command line",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # List managed tabs
+  browser-cli --list
+
+  # Open a page; tab ID on stdout, prose on stderr
+  TAB=$(browser-cli --go "https://example.com")
+
+  # Get snapshot of that tab
+  browser-cli $TAB <<< 'snap()'
+
+  # Form filling with refs
+  browser-cli abc123 <<'EOF'
+  await type(1, "user@test.com")
+  await type(2, "secret123")
+  await click(3)
+  EOF
+
+  # Wait for dynamic content
+  browser-cli abc123 <<'EOF'
+  await click(5)
+  await wait("text", "Success")
+  snap()
+  EOF
+
+Available JS API:
+  Interaction (use refs from snap()):
+    click(ref)           - Click element
+    click(ref, {double}) - Double click
+    type(ref, text)      - Type into input
+    type(ref, text, {clear}) - Clear first
+    hover(ref)           - Hover element
+    drag(from, to)       - Drag and drop
+    select(ref, value)   - Select option
+    key(name)            - Press key
+
+  Inspection:
+    snap()               - Get page snapshot (diff after first call)
+    snap({full: true})   - Force full snapshot
+    snap({forms: true})  - Filter: form elements only
+    snap({links: true})  - Filter: links only
+    snap({text: "..."})  - Filter: by text
+    logs()               - Get console logs
+
+  Waiting:
+    wait(ms)             - Wait milliseconds
+    wait("idle")         - Wait for DOM to stabilize
+    wait("text", str)    - Wait for text to appear
+    wait("gone", str)    - Wait for text to disappear
+
+  Media:
+    shot()               - Screenshot (returns data URL)
+    shot(path)           - Screenshot to file
+    download(url)        - Download file to ~/Downloads
+    download(url, name)  - Download with custom filename
+
+Tab management is done via CLI flags, not JS:
+  browser-cli --go URL   - Open/navigate tab, prints tab ID
+  browser-cli --list     - List managed tabs
+        """,
+    )
+
+    parser.add_argument(
+        "tab_id",
+        nargs="?",
+        help="Tab ID to execute code in. Code is read from stdin.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all managed tabs (TSV: id<TAB>active<TAB>url<TAB>title)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output --list as JSON",
+    )
+    parser.add_argument(
+        "--install-host",
+        action="store_true",
+        help="Install native messaging host for Firefox",
+    )
+    parser.add_argument(
+        "--socket",
+        help="Unix socket path (default: $XDG_RUNTIME_DIR/browser-cli.sock)",
+    )
+    parser.add_argument(
+        "--go",
+        metavar="URL",
+        help="Navigate the tab to URL and wait for load",
+    )
+    parser.add_argument(
+        "--firefox-path",
+        metavar="PATH",
+        help="Path to Firefox/LibreWolf binary for headless mode (env: BROWSER_CLI_FIREFOX_PATH)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
+
+    return parser
+
+
+def _resolve_firefox_path(args: argparse.Namespace) -> str | None:
+    """Resolve Firefox path from CLI args, env, or config file."""
+    cli_path: str | None = args.firefox_path
+    if cli_path:
+        return cli_path
+    return get_firefox_path()
+
+
+def main() -> None:
+    """Run the browser CLI."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    try:
+        if args.install_host:
+            install_native_host()
+        elif args.list:
+            firefox_path = _resolve_firefox_path(args)
+            asyncio.run(list_tabs(args.socket, firefox_path=firefox_path, as_json=args.json))
+        elif args.go:
+            firefox_path = _resolve_firefox_path(args)
+            asyncio.run(navigate_tab(args.tab_id, args.go, args.socket, firefox_path=firefox_path))
+        elif args.tab_id or not sys.stdin.isatty():
+            code = sys.stdin.read()
+            if not code.strip():
+                print("Error: No JavaScript code provided on stdin", file=sys.stderr)
+                sys.exit(1)
+            firefox_path = _resolve_firefox_path(args)
+            asyncio.run(exec_js(args.tab_id, code, args.socket, firefox_path=firefox_path))
+        else:
+            parser.print_help()
+            sys.exit(1)
+
+    except BrowserCLIError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
