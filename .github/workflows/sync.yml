@@ -19,8 +19,6 @@ jobs:
       pull-requests: write
 
     env:
-      GH_TOKEN: ${{ github.token }}
-
       BRANCH_NAME: sync-upstream-skills
       LABEL_NAME: automated-sync
 
@@ -36,7 +34,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 检查 upstream 状态，并生成 JSON 报告。
       - name: inspect upstream state
         id: check_step
         shell: bash
@@ -171,20 +168,18 @@ jobs:
               f.write("\n".join(lines))
           PY
 
-      # 将检查报告写入 Actions Summary。
       - name: publish report to step summary
         shell: bash
         run: |
           set -euo pipefail
           cat /tmp/pr_body.md >> "$GITHUB_STEP_SUMMARY"
 
-      # 无需同步时，后续步骤会因条件不满足而跳过。
       - name: report up to date
         if: steps.check_step.outputs.needs_sync == 'false'
+        shell: bash
         run: |
           echo "::notice title=up-to-date::all sources and packages are synchronized."
 
-      # 将 upstream 更新落盘到当前工作区。
       - name: materialize package updates
         if: steps.check_step.outputs.needs_sync == 'true'
         shell: bash
@@ -192,7 +187,6 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/source.py update
 
-      # 检查 source.lock.toml 和 skills/ 是否发生变化。
       - name: inspect filesystem diff
         if: steps.check_step.outputs.needs_sync == 'true'
         id: check_diff
@@ -200,19 +194,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- source.lock.toml skills/ \
-            && [ -z "$(git status --porcelain -- source.lock.toml skills/)" ]; then
+          if [ -z "$(git status --porcelain -- source.lock.toml skills/)" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # 提交更新、强制推送同步分支，并创建或更新 PR。
       - name: push changes and manage pull request
         if: >
           steps.check_step.outputs.needs_sync == 'true' &&
           steps.check_diff.outputs.changed == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           set -euo pipefail
 
