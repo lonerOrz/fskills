@@ -18,6 +18,7 @@ jobs:
       pull-requests: write
 
     env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       BRANCH_NAME: sync-upstream-skills
       LABEL_NAME: automated-sync
 
@@ -25,6 +26,7 @@ jobs:
       - name: checkout repository
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: set up python
