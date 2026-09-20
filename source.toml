@@ -66,6 +66,15 @@ skills = [
 ]
 
 
+#  https://github.com/Leonxlnx/taste-skill.git
+[[sources]]
+repo = "Leonxlnx/taste-skill"
+target = "skills/taste"
+skills = [
+    "skills/taste-skill",
+]
+
+
 # Local self-authored skills (tracked directly in this repository).
 # Never fetched, never locked; validated on 'check' and linked on 'link'.
 [[sources]]
