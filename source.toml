@@ -53,7 +53,7 @@ target = "skills/matt"
 skills = [
     "skills/engineering/*",
     "skills/productivity/*",
-    "skills/in-progress/pr",
+    "skills/in-progress/*",
 ]
 
 
