@@ -6,11 +6,11 @@ commit = "1e6eef8e989bf5d88bfa9ca29b50a472df795927"
 
 [[sources]]
 repo = "mattpocock/skills"
-commit = "b0618bc436ad893b3c5e84e55fba86586d34a404"
+commit = "49dd158d1076134a641b33efb035946536778336"
 
 [[sources]]
 repo = "longbridge/gpui-kit"
-commit = "37cad320d4ac8950e6fc40a38b8cb6251079a133"
+commit = "9c4b175c6b7716d9df141544db6f6c4880501a78"
 
 [[sources]]
 repo = "Leonxlnx/taste-skill"
