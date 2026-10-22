@@ -2,7 +2,7 @@ version = 1
 
 [[sources]]
 repo = "Mic92/mics-skills"
-commit = "1e6eef8e989bf5d88bfa9ca29b50a472df795927"
+commit = "2628f05791da98c9e8a014c277a0bc1d91065e68"
 
 [[sources]]
 repo = "mattpocock/skills"
