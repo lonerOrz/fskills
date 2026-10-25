@@ -66,12 +66,20 @@ skills = [
 ]
 
 
-#  https://github.com/Leonxlnx/taste-skill.git
+# https://github.com/Leonxlnx/taste-skill.git
 [[sources]]
 repo = "Leonxlnx/taste-skill"
 target = "skills/taste"
 skills = [
     "skills/taste-skill",
+]
+
+# https://github.com/MidAutumnMoon/TaysiTsuki.git
+[[sources]]
+repo = "MidAutumnMoon/TaysiTsuki"
+target = "skills/TaysiTsuki"
+skills = [
+    "home/agents/skills/*",
 ]
 
 
