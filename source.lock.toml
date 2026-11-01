@@ -10,7 +10,7 @@ commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
 
 [[sources]]
 repo = "longbridge/gpui-kit"
-commit = "73cbcf72f0bf42f7fb56acbaf88372787c3f1b2d"
+commit = "56e9153c4e80775cb6e29d5ef6f6b350bbab71b1"
 
 [[sources]]
 repo = "Leonxlnx/taste-skill"
