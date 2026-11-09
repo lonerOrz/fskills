@@ -52,6 +52,14 @@ class SourceSpec:
             return self.path.as_posix()
         return cast(str, self.repo)
 
+    @property
+    def link_namespace(self) -> str | None:
+        """Prefix applied to resolved package names when linking into a flat namespace.
+        For remote sources this is the repo owner; for local sources it is None."""
+        if self.repo is not None:
+            return self.repo.split("/")[0]
+        return None
+
 
 @dataclass(frozen=True)
 class ResolvedPackage:
@@ -363,7 +371,9 @@ def parse_sources() -> tuple[SourceSpec, ...]:
             if identifier in seen_identifiers:
                 fail(f"repository declared more than once: {repo}")
             seen_identifiers.add(identifier)
-
+            # Use the repository owner as the link namespace so skill-name
+            # collisions across different upstream repos are resolved by
+            # prepending "<owner>-".
             branch_value = raw.get("branch")
             branch = (
                 None
@@ -1105,6 +1115,7 @@ def state_to_dict(state: SourceState) -> dict[str, object]:
         "remote_commit": state.remote_commit,
         "locked_commit": state.locked_commit,
         "target": state.spec.target.as_posix(),
+        "namespace": state.spec.link_namespace,
         "status": state.status,
         "needs_sync": state.needs_sync,
         "selectors": list(state.spec.selectors),
@@ -1309,7 +1320,7 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
     locked = load_lock()
     states = resolve_sources(locked)
 
-    expected_links: dict[str, Path] = {}  # package_name -> abs_pkg_path
+    expected_links: dict[str, Path] = {}  # link_name -> abs_pkg_path
 
     for state in states:
         target_dir = (PROJECT_ROOT / state.spec.target).resolve()
@@ -1319,15 +1330,23 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
             if not pkg_path.is_dir():
                 continue
 
-            if package.name in expected_links:
-                first = expected_links[package.name].relative_to(PROJECT_ROOT)
+            # Prepend owner prefix when linking into flat namespace to avoid
+            # collisions between identically-named packages from different repos.
+            link_name = (
+                f"{state.spec.link_namespace}-{package.name}"
+                if state.spec.link_namespace
+                else package.name
+            )
+
+            if link_name in expected_links:
+                first = expected_links[link_name].relative_to(PROJECT_ROOT)
                 second = pkg_path.relative_to(PROJECT_ROOT)
                 fail(
-                    f"skill name collision when linking: {package.name!r}\n"
+                    f"skill name collision when linking: {link_name!r}\n"
                     f"  first:  {first}\n"
                     f"  second: {second}"
                 )
-            expected_links[package.name] = pkg_path
+            expected_links[link_name] = pkg_path
 
     print(f"Linking {len(expected_links)} skills to {dest_path.as_posix()}/")
 

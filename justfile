@@ -1,5 +1,5 @@
 # Agent skills path
-pi_skills := "~/.config/pi/skills"
+pi_skills := "~/.config/omp/agent/skills"
 opencode_skills := "~/.config/opencode/skills"
 
 default:
