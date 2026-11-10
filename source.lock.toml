@@ -19,3 +19,7 @@ commit = "f6b76575f949707b4e3c37cd86cb44b0b98643e8"
 [[sources]]
 repo = "MidAutumnMoon/TaysiTsuki"
 commit = "c250e1913321f3ef07288c0a523cccd72fd81aee"
+
+[[sources]]
+repo = "morganlinton/BeautifulRust"
+commit = "b9718436d77ee7bcf17cdcb6aa27628feb95d97a"

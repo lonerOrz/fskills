@@ -83,6 +83,14 @@ skills = [
 ]
 
 
+# https://github.com/morganlinton/BeautifulRust.git
+[[sources]]
+repo = "morganlinton/BeautifulRust"
+target = "skills/BeautifulRust"
+skills = [
+    "skills/*",
+]
+
 # Local self-authored skills (tracked directly in this repository).
 # Never fetched, never locked; validated on 'check' and linked on 'link'.
 [[sources]]
