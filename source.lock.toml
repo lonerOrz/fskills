@@ -2,15 +2,15 @@ version = 1
 
 [[sources]]
 repo = "Mic92/mics-skills"
-commit = "2628f05791da98c9e8a014c277a0bc1d91065e68"
+commit = "54eb2f0086148b815c5efac5b1096ebfef7522fd"
 
 [[sources]]
 repo = "mattpocock/skills"
-commit = "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d"
+commit = "5863806dd4e15c63174bee4e7515a4256792ecfa"
 
 [[sources]]
 repo = "longbridge/gpui-kit"
-commit = "1f3dcb4a0c86879a135666bfd49ca25d51e20d0d"
+commit = "7ab77b5a10162068dca484e57b940f7a2e005706"
 
 [[sources]]
 repo = "Leonxlnx/taste-skill"
@@ -18,4 +18,4 @@ commit = "f6b76575f949707b4e3c37cd86cb44b0b98643e8"
 
 [[sources]]
 repo = "MidAutumnMoon/TaysiTsuki"
-commit = "d26bd1264d6de87b9bbe6d067214926ac96118fa"
+commit = "36f9c82acf58a84a0861525524238109639b9b4a"
