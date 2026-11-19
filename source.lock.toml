@@ -10,7 +10,7 @@ commit = "5863806dd4e15c63174bee4e7515a4256792ecfa"
 
 [[sources]]
 repo = "longbridge/gpui-kit"
-commit = "5bece8fc054c92c60a083fbf6df25bd11c6025d1"
+commit = "9bcad2367f095d85b4e1f64ca4b47eec1d13e1f5"
 
 [[sources]]
 repo = "Leonxlnx/taste-skill"
@@ -18,7 +18,7 @@ commit = "f6b76575f949707b4e3c37cd86cb44b0b98643e8"
 
 [[sources]]
 repo = "MidAutumnMoon/TaysiTsuki"
-commit = "c250e1913321f3ef07288c0a523cccd72fd81aee"
+commit = "81037049116e9724ec692a9f410fb357c6b0ab93"
 
 [[sources]]
 repo = "morganlinton/BeautifulRust"
