@@ -3,7 +3,7 @@ name: sync upstream skills
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 0 */3 * *"
+    - cron: "17 0 * * 1"
 
 concurrency:
   group: sync-upstream-skills
