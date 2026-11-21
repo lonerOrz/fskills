@@ -55,9 +55,11 @@ class SourceSpec:
     @property
     def link_namespace(self) -> str | None:
         """Prefix applied to resolved package names when linking into a flat namespace.
-        For remote sources this is the repo owner; for local sources it is None."""
+        For remote sources this is the repo owner; for local sources it is the path leaf."""
         if self.repo is not None:
             return self.repo.split("/")[0]
+        if self.path is not None:
+            return PurePosixPath(self.path).name
         return None
 
 
