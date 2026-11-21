@@ -1,11 +1,6 @@
 ---
 name: codebase-coherence-engineering
-description: >
-  Systematically explore, audit, improve, and independently verify large codebases.
-  Use for full-project audits, architectural evolution, maintainability improvements,
-  and complex multi-module refactoring. Follows runtime execution from entry points,
-  audits cohesive implementation units, analyzes structural dependencies, and uses
-  coordinated subagents with iterative verification loops.
+description: Explore, audit, improve, and independently verify a large codebase by tracing runtime execution from entry points, auditing cohesive implementation units, mapping structural dependencies, and coordinating subagents through iterative verify-review loops. Use when the user requests a full-project audit, architectural evolution, maintainability improvement, multi-module refactoring, or an end-to-end coherence review.
 ---
 
 # Codebase Coherence Engineering
@@ -22,19 +17,17 @@ The primary agent owns the overall result.
 
 ## 1. Multi-Agent Coordination
 
-Use subagents when delegation materially improves exploration, implementation, or verification.
-
-The primary agent acts as the orchestrator and integrator.
+Use subagents when a task has independent read-only investigation or file-isolated implementation that benefits from parallel context. The primary agent acts as orchestrator and integrator.
 
 Delegate independent work with explicit scope, context, constraints, and expected deliverables.
 
-Use these responsibilities as needed:
-
-- **Flow Explorer:** Discovers entry points, traces execution paths, and identifies cohesive implementation units.
-- **Structure Explorer:** Maps module/package/crate ownership, dependency relationships, interfaces, and architectural boundaries.
-- **Implementer:** Owns a clearly scoped implementation change.
-- **Independent Reviewer:** Examines completed changes from a fresh context and challenges their correctness and architectural coherence.
-- **Verifier:** Independently executes relevant validation and reports reproducible evidence.
+| Responsibility       | Scope                                                                                          |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| Flow Explorer        | Entry points, execution paths, cohesive implementation units                                   |
+| Structure Explorer   | Module/package/crate ownership, dependency relationships, interfaces, architectural boundaries |
+| Implementer          | One clearly scoped implementation change                                                       |
+| Independent Reviewer | Fresh-context review of completed changes: correctness and architectural coherence             |
+| Verifier             | Independent execution of relevant validation; reproducible evidence                            |
 
 These are responsibilities, not mandatory permanent agents. Combine or omit them according to task complexity.
 
@@ -42,9 +35,9 @@ These are responsibilities, not mandatory permanent agents. Combine or omit them
 
 - Parallelize independent exploration and read-only analysis.
 - Parallelize implementation only when ownership and file boundaries are genuinely independent.
-- Assign one clear owner for shared interfaces, integration, and final decisions.
-- Never allow competing agents to modify the same implementation concurrently without explicit coordination.
-- Give reviewers the actual requirements, relevant context, and resulting changes; do not rely solely on the implementer's self-assessment.
+- Assign one owner per shared interface, integration point, or final decision.
+- Each implementation file set has one owner. Parallel modification of the same file set requires explicit coordination and a named integrator.
+- Reviewer inputs must include the actual requirements, relevant context, and resulting changes. The implementer's self-assessment is supporting evidence, not the basis for approval.
 - Treat subagent findings as evidence to evaluate, not unquestionable truth.
 - If independent agents or collaboration tools are unavailable, state the limitation instead of pretending delegation occurred.
 
@@ -52,48 +45,34 @@ Prefer a small number of focused agents over uncontrolled agent proliferation.
 
 ## 2. Build Two Complementary System Maps
 
-Understand the system through both its behavior and its structure.
-
 ### Runtime Map
 
-Start at `main()` and all other actual application entry points.
-
-Follow real execution paths through initialization, dispatch, branching, state changes, external interactions, asynchronous work, and termination.
-
-Identify meaningful execution branches and their relationships.
+Start at `main()` and all other actual application entry points. Follow real execution paths through initialization, dispatch, branching, state changes, external interactions, asynchronous work, and termination. Identify meaningful execution branches and their relationships.
 
 ### Structural Map
 
-Independently inspect how the system is organized and connected.
+Inspect how the system is organized and connected: responsibility ownership, module boundaries, public interfaces, dependency directions, shared abstractions, and cross-module contracts.
 
-Understand responsibility ownership, module boundaries, public interfaces, dependency directions, shared abstractions, and cross-module contracts.
+For languages with explicit package or crate systems, inspect both declared dependencies and actual source-level relationships. For Rust, include workspace membership, Cargo dependencies, feature relationships, public re-exports, and cross-crate type and trait usage.
 
-For languages with explicit package or crate systems, understand both declared dependencies and actual source-level relationships. In Rust, include workspace membership, Cargo dependencies, feature relationships, public re-exports, and cross-crate type and trait usage.
+A valid dependency graph and a coherent architecture are different properties. Reconcile the runtime map and structural map throughout the audit.
 
-Do not confuse a valid dependency graph with a coherent architecture.
+## 3. Choose Audit Units
 
-Reconcile the runtime map and structural map throughout the audit.
-
-## 3. Choose the Right Audit Unit
-
-The smallest audit unit is a cohesive implementation responsibility, not an arbitrary file, line, or repository component.
-
-It may be:
+The smallest audit unit is a cohesive implementation responsibility, not an arbitrary file, line, or repository component. A unit may be:
 
 - A function or method.
 - A type and the operations that maintain its invariants.
 - A data structure and its ownership/lifecycle rules.
 - A tightly related group of functions and types that cannot be correctly understood in isolation.
 
-Choose a unit small enough to understand, modify, and verify meaningfully, but large enough to preserve its responsibilities and invariants.
+Choose a unit whose invariants fit in one review. Expand context whenever a change would affect callers, state ownership, or shared contracts.
 
-Do not mechanically split every function or field into separate tasks.
+Split a unit into separate tasks only when each resulting task has its own invariants and can be verified independently.
 
 ### Expand Context Around Each Unit
 
-Although implementation proceeds at a small scale, understanding must extend beyond the selected unit.
-
-Inspect the relationships needed to determine its actual role:
+Understanding extends beyond the selected unit. Inspect the relationships that determine its actual role:
 
 - Callers and callees.
 - Inputs, outputs, and state ownership.
@@ -102,53 +81,26 @@ Inspect the relationships needed to determine its actual role:
 - Module and package/crate boundaries.
 - Effects on relevant execution branches.
 
-Expand or contract the investigation according to the evidence.
-
-A locally correct implementation is not sufficient if it makes the surrounding system less coherent.
+Expand or contract the investigation according to the evidence. A locally correct implementation is not sufficient if it makes the surrounding system less coherent.
 
 ## 4. The Engineering Loop
 
-For each meaningful unit, use this feedback loop:
+Each meaningful unit must cover six activities. Activities may interleave when dependencies require; none may be skipped.
 
-**Understand → Evaluate → Improve → Verify → Independently Review → Refine**
-
-### Understand
-
-Determine the unit's actual responsibility, invariants, dependencies, and role in the execution flow.
-
-### Evaluate
-
-Use engineering judgment to identify meaningful correctness, design, organization, reliability, or performance improvements.
-
-Distinguish root causes from symptoms. Do not manufacture work merely because a unit can be rewritten.
-
-### Improve
-
-Implement the smallest complete change that produces a justified improvement.
-
-Preserve established architecture and behavior unless there is a reason to evolve them.
-
-### Verify
-
-Run validation appropriate to the changed behavior and its dependencies.
-
-### Independently Review
-
-Obtain an independent review of the implementation and its broader effects.
-
-### Refine
-
-Resolve substantive findings and repeat relevant verification and review.
+1. **Understand** — actual responsibility, invariants, dependencies, role in the execution flow.
+2. **Evaluate** — confirmed correctness, design, organization, reliability, or performance issue. Distinguish root causes from symptoms; a unit is changed only when the change addresses a confirmed issue.
+3. **Improve** — smallest complete change that produces the justified improvement. Preserve established architecture and behavior unless there is a reason to evolve them.
+4. **Verify** — validation appropriate to the changed behavior and its dependencies.
+5. **Independently Review** — review of the implementation and its broader effects by a context other than the implementer.
+6. **Refine** — resolve substantive findings; repeat relevant verification and review.
 
 Accept the unit only when its intended behavior is supported by evidence and no unresolved blocking findings remain.
 
 If progress stalls or the same issue repeatedly reappears, reassess the underlying assumptions or escalate the decision instead of looping indefinitely.
 
-## 5. Branch-Level Synthesis
+## 5. Branch-Level Verification
 
-After completing the cohesive units within an execution branch, reassess the branch as a whole.
-
-Look for issues that individual unit reviews may not reveal:
+After completing the cohesive units within an execution branch, reassess the branch as a whole. Look for issues individual unit reviews may not reveal:
 
 - Inconsistent responsibility boundaries.
 - Fragmented state ownership.
@@ -157,15 +109,11 @@ Look for issues that individual unit reviews may not reveal:
 - Hidden coupling across execution stages.
 - Unnecessary dependencies and duplicated behavior.
 
-Determine whether local improvements collectively form a coherent implementation.
+Verify the branch as an integrated behavior, not a collection of individually correct functions.
 
-Verify the branch as an integrated behavior, not just a collection of individually correct functions.
+## 6. System-Level Evolution
 
-## 6. Global Architecture Evolution
-
-After the in-scope execution branches have been understood and audited, perform a system-wide architectural assessment.
-
-Synthesize findings from the runtime map, structural map, and completed branch audits.
+After the in-scope execution branches have been understood and audited, synthesize findings from the runtime map, structural map, and completed branch audits.
 
 Identify opportunities to improve:
 
@@ -177,46 +125,36 @@ Identify opportunities to improve:
 - Lifecycle and error-handling consistency.
 - Overall changeability and architectural complexity.
 
-Consider interactions between components, not merely their individual quality.
+Consider interactions between components, not merely their individual quality. Introduce a shared abstraction only when two or more modules share the same invariants and the abstraction reduces change coupling; superficial similarity is not sufficient.
 
-Distinguish genuine shared responsibilities from superficial similarities. Do not force unrelated modules into a common abstraction.
+Prioritize architectural improvements by impact on system coherence and future changes. Implement meaningful improvements incrementally. Revisit every affected execution branch and repeat the engineering loop.
 
-Prioritize architectural improvements by their impact on system coherence and future changes.
-
-Implement meaningful improvements incrementally. Revisit every affected execution branch and repeat the engineering loop.
-
-Do not introduce speculative rewrites or start overlapping migrations.
+A speculative rewrite or an overlapping migration starts only after the current in-scope work has been verified and reviewed.
 
 ## 7. Verification and Independence
 
-Verification must be proportional to impact.
+Verification must be proportional to impact. Use the project's established build, test, static-analysis, lint, formatting, architecture, and runtime validation mechanisms where relevant.
 
-Use the project's established build, test, static-analysis, lint, formatting, architecture, and runtime validation mechanisms where relevant.
-
-For significant changes, the implementer must not be the sole source of approval.
-
-Independent review and execution evidence should challenge the actual result, including cross-module and cross-package effects.
+For significant changes, approval must come from a reviewer other than the implementer. Independent review and execution evidence should challenge the actual result, including cross-module and cross-package effects.
 
 A review is not a substitute for executable verification, and a passing build is not a substitute for architectural review.
 
-If an independent reviewer is unavailable, record the result as unverified independently.
+Verification evidence must come from executed commands. When a check fails, record the failure and its resolution before marking the change complete.
 
-Never disable checks, hide failures, or claim success without evidence.
+If an independent reviewer is unavailable, record the result as unverified independently.
 
 ## 8. Progress and Completion
 
-Maintain a concise progress ledger for large audits.
+Maintain a concise progress ledger for large audits. Track discovered entry points, execution branches, completed units, outstanding findings, verification evidence, and unresolved architectural decisions.
 
-Track discovered entry points, execution branches, completed units, outstanding findings, verification evidence, and unresolved architectural decisions.
-
-Reuse existing project tracking conventions when available. Avoid producing redundant documentation or process artifacts.
+Use the project's existing tracking conventions. Create a new artifact only when no existing convention covers the need.
 
 Resume from verified checkpoints rather than repeating completed work.
 
 A full audit is complete only when:
 
 - Relevant application entry points and execution branches have been covered.
-- Meaningful cohesive units have been audited within their actual context.
+- Cohesive units have been audited within their actual context.
 - Structural dependencies and cross-module relationships have been assessed.
 - Branch-level behavior has been verified.
 - Global architecture has been evaluated and justified improvements have been completed.
@@ -227,6 +165,4 @@ A full audit is complete only when:
 
 **Start from behavior. Work at the level of cohesive responsibilities. Understand relationships beyond local boundaries. Use independent agents to challenge assumptions. Improve the architecture through evidence-driven iteration.**
 
-The goal is not to make every component individually elegant.
-
-The goal is to make the entire system easier to understand, change, verify, and evolve.
+The goal is not to make every component individually elegant. The goal is to make the entire system easier to understand, change, verify, and evolve.
