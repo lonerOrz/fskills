@@ -1,7 +1,8 @@
 # Implicit Assumption Checklist
 
-For each assumption, record: the assumption statement, its category, and the
-consequence if it does not hold. Do not propose remedies here.
+For each assumption, record the assumption statement, its category, and the
+consequence if it does not hold. This checklist records assumptions and
+consequences only; remedies belong to the report stage.
 
 ## Caller contract
 
