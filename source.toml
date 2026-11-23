@@ -99,6 +99,16 @@ skills = [
     "skills/*",
 ]
 
+# https://github.com/google/skills.git
+# Skills live in per-domain subdirectories (skills/cloud/*, skills/ads/*, ...).
+# Curated: Rust migration, GKE core lifecycle, onboarding recipes, LiteRT.
+[[sources]]
+repo = "google/skills"
+target = "skills/google"
+skills = [
+    "skills/developers/migrate-to-rust",
+]
+
 # Local self-authored skills (tracked directly in this repository).
 # Never fetched, never locked; validated on 'check' and linked on 'link'.
 [[sources]]

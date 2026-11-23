@@ -27,3 +27,7 @@ commit = "b9718436d77ee7bcf17cdcb6aa27628feb95d97a"
 [[sources]]
 repo = "DeVaNsHk72/oxidize"
 commit = "b1aa55a4c2b6cdae48056e3f825a623b8624642c"
+
+[[sources]]
+repo = "google/skills"
+commit = "4bb21ebfa085f6307d5d62bc21765e1d3433f11d"
