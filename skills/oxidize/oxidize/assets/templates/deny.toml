@@ -1,0 +1,32 @@
+# cargo-deny config — supply-chain gate. Run: `cargo deny check`
+# Install: `cargo install cargo-deny`. See references/production.md.
+
+[advisories]
+# Fail on known security advisories (RustSec DB).
+yanked = "deny"
+# `ignore = ["RUSTSEC-XXXX-XXXX"]`  # add specific, justified exceptions only.
+
+[licenses]
+# Allow the licenses you're actually willing to ship. Adjust to your policy.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Catch accidental multiple versions of the same crate (bloat / conflicting behavior).
+multiple-versions = "warn"
+wildcard = "deny"           # no `foo = "*"` version requirements
+# deny = [{ name = "openssl" }]   # e.g. force rustls instead — add as needed.
+
+[sources]
+# Only allow crates from crates.io unless you deliberately add a registry/git source.
+unknown-registry = "deny"
+unknown-git = "deny"

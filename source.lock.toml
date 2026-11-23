@@ -6,20 +6,24 @@ commit = "54eb2f0086148b815c5efac5b1096ebfef7522fd"
 
 [[sources]]
 repo = "mattpocock/skills"
-commit = "5863806dd4e15c63174bee4e7515a4256792ecfa"
+commit = "abeeaf95660ba9e8b7c753eb38f441ca707a8823"
 
 [[sources]]
 repo = "longbridge/gpui-kit"
-commit = "9bcad2367f095d85b4e1f64ca4b47eec1d13e1f5"
+commit = "71cabe2f741058972db58dc17de72e5dde3ca2ab"
 
 [[sources]]
 repo = "Leonxlnx/taste-skill"
-commit = "f6b76575f949707b4e3c37cd86cb44b0b98643e8"
+commit = "6c0b5c78f5d31776e2210305abaa210cdc0030bf"
 
 [[sources]]
 repo = "MidAutumnMoon/TaysiTsuki"
-commit = "81037049116e9724ec692a9f410fb357c6b0ab93"
+commit = "5c4ff135a97c855876d6ac58a486aedc4a3d0a08"
 
 [[sources]]
 repo = "morganlinton/BeautifulRust"
 commit = "b9718436d77ee7bcf17cdcb6aa27628feb95d97a"
+
+[[sources]]
+repo = "DeVaNsHk72/oxidize"
+commit = "b1aa55a4c2b6cdae48056e3f825a623b8624642c"

@@ -91,6 +91,14 @@ skills = [
     "skills/*",
 ]
 
+# https://github.com/DeVaNsHk72/oxidize.git
+[[sources]]
+repo = "DeVaNsHk72/oxidize"
+target = "skills/oxidize"
+skills = [
+    "skills/*",
+]
+
 # Local self-authored skills (tracked directly in this repository).
 # Never fetched, never locked; validated on 'check' and linked on 'link'.
 [[sources]]

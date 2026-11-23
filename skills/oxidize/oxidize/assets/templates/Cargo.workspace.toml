@@ -1,0 +1,29 @@
+# Workspace root Cargo.toml — copy to ./Cargo.toml and adjust members.
+# Keep the `core` crate free of FFI/unsafe; put bindings in a separate `bindings` crate.
+
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+# Shared dependency versions. In member crates write e.g. `serde.workspace = true`.
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+# Testing / benching (dev-dependencies in members):
+proptest = "1"
+insta = { version = "1", features = ["yaml"] }
+criterion = "0.5"
+
+# Optimized release builds — re-benchmark after enabling (see references/production.md).
+[profile.release]
+opt-level = 3
+lto = "thin"        # try "fat" for the last few %; slower to compile
+codegen-units = 1
+panic = "abort"     # smaller/faster; omit if you rely on catch_unwind at the top level
+
+# Faster local dev builds of dependencies without slowing your own iteration.
+[profile.dev.package."*"]
+opt-level = 2
