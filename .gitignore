@@ -3,3 +3,6 @@
 
 # Env
 .envrc
+
+# Python
+__pycache__/

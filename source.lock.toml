@@ -31,3 +31,7 @@ commit = "b1aa55a4c2b6cdae48056e3f825a623b8624642c"
 [[sources]]
 repo = "google/skills"
 commit = "4bb21ebfa085f6307d5d62bc21765e1d3433f11d"
+
+[[sources]]
+repo = "RealAdarsh/cpp-to-rust-skill"
+commit = "44c4a858b2e7b672ed2e91d4a84fbf51feb7f32c"

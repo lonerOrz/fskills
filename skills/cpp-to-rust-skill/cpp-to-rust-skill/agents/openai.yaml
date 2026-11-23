@@ -1,0 +1,4 @@
+interface:
+  display_name: "C++ to Rust Porting"
+  short_description: "Production-grade migration workflow from C++ libraries to idiomatic Rust"
+  default_prompt: "Use $cpp-to-rust-port to migrate this C++ library (or selected modules) to idiomatic Rust with behavior and performance parity."

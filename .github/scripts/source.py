@@ -8,13 +8,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import NoReturn, cast
-
-import tomllib
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_FILE = PROJECT_ROOT / "source.toml"
@@ -41,6 +40,7 @@ class SourceSpec:
     branch: str | None
     target: Path
     selectors: tuple[str, ...]
+    package_name: str | None
 
     @property
     def is_local(self) -> bool:
@@ -54,8 +54,7 @@ class SourceSpec:
 
     @property
     def link_namespace(self) -> str | None:
-        """Prefix applied to resolved package names when linking into a flat namespace.
-        For remote sources this is the repo owner; for local sources it is the path leaf."""
+        """Remote: repo owner; local: path leaf."""
         if self.repo is not None:
             return self.repo.split("/")[0]
         if self.path is not None:
@@ -282,6 +281,21 @@ def normalize_selector_path(value: str) -> PurePosixPath:
 # ---------------------------------------------------------------------------
 
 
+def parse_package_name(
+    raw: dict[str, object], index: int, repo: str | None
+) -> str | None:
+    """Wrap name for a single-skill repo root: explicit `package_name` field, else repo leaf."""
+    override = raw.get("package_name")
+    if override is not None:
+        name = as_string(override, context=f"sources[{index}].package_name")
+        if not name:
+            fail(f"sources[{index}].package_name must be non-empty")
+        return name
+    if repo is None:
+        return None
+    return repo.split("/")[1]
+
+
 def parse_repo(value: object) -> str:
     repo = as_string(value, context="repo")
     parts = repo.split("/")
@@ -341,7 +355,7 @@ def parse_sources() -> tuple[SourceSpec, ...]:
     if not raw_items:
         fail("source.toml must contain at least one [[sources]] entry")
 
-    allowed_keys = {"repo", "path", "branch", "target", "skills"}
+    allowed_keys = {"repo", "path", "branch", "target", "skills", "package_name"}
     result: list[SourceSpec] = []
     seen_identifiers: set[str] = set()
 
@@ -373,9 +387,6 @@ def parse_sources() -> tuple[SourceSpec, ...]:
             if identifier in seen_identifiers:
                 fail(f"repository declared more than once: {repo}")
             seen_identifiers.add(identifier)
-            # Use the repository owner as the link namespace so skill-name
-            # collisions across different upstream repos are resolved by
-            # prepending "<owner>-".
             branch_value = raw.get("branch")
             branch = (
                 None
@@ -390,6 +401,8 @@ def parse_sources() -> tuple[SourceSpec, ...]:
                 field=f"sources[{index}].target",
             )
 
+            package_name = parse_package_name(raw, index, repo)
+
             result.append(
                 SourceSpec(
                     repo=repo,
@@ -397,6 +410,7 @@ def parse_sources() -> tuple[SourceSpec, ...]:
                     branch=branch,
                     target=target,
                     selectors=selectors,
+                    package_name=package_name,
                 )
             )
 
@@ -429,6 +443,7 @@ def parse_sources() -> tuple[SourceSpec, ...]:
                     branch=None,
                     target=target,
                     selectors=selectors,
+                    package_name=None,
                 )
             )
 
@@ -690,7 +705,6 @@ def build_repository_snapshot(
 
 
 def build_local_snapshot(path: Path) -> RepositorySnapshot:
-    """扫描本地自研路径构建同构快照，高内聚复用包解析算法。"""
     full_path = PROJECT_ROOT / path
     if not full_path.exists():
         fail(f"local source path does not exist: {path.as_posix()}")
@@ -769,8 +783,22 @@ def package_for_directory(
     return ResolvedPackage(source_path=directory, name=directory.name)
 
 
-def resolve_all(snapshot: RepositorySnapshot) -> tuple[ResolvedPackage, ...]:
+def resolve_all(
+    snapshot: RepositorySnapshot,
+    wrap_name: str | None = None,
+) -> tuple[ResolvedPackage, ...]:
     packages: dict[PurePosixPath, ResolvedPackage] = {}
+
+    if wrap_name is not None:
+        if PurePosixPath("SKILL.md") not in snapshot.files:
+            fail(
+                f"selector '*' expected SKILL.md at repository root "
+                f"to materialize a single-skill package '{wrap_name}'"
+            )
+        package = ResolvedPackage(source_path=PurePosixPath("."), name=wrap_name)
+        packages[package.source_path] = package
+        return (package,)
+
     for skill_file in snapshot.files:
         if skill_file.name != "SKILL.md":
             continue
@@ -827,10 +855,12 @@ def resolve_exact(snapshot: RepositorySnapshot, path: PurePosixPath) -> Resolved
 
 
 def resolve_selector(
-    snapshot: RepositorySnapshot, selector: str
+    snapshot: RepositorySnapshot,
+    selector: str,
+    wrap_name: str | None = None,
 ) -> tuple[ResolvedPackage, ...]:
     if selector == "*":
-        return resolve_all(snapshot)
+        return resolve_all(snapshot, wrap_name)
 
     if selector.endswith("/*"):
         return resolve_children(snapshot, normalize_selector_path(selector[:-2]))
@@ -852,12 +882,13 @@ def resolve_selector(
 def resolve_packages(
     snapshot: RepositorySnapshot,
     selectors: tuple[str, ...],
+    wrap_name: str | None = None,
 ) -> tuple[ResolvedPackage, ...]:
     packages: dict[PurePosixPath, ResolvedPackage] = {}
     names: dict[str, PurePosixPath] = {}
 
     for selector in selectors:
-        for package in resolve_selector(snapshot, selector):
+        for package in resolve_selector(snapshot, selector, wrap_name):
             previous = names.get(package.name)
             if previous is not None and previous != package.source_path:
                 fail(
@@ -987,7 +1018,8 @@ def build_source_state(
     repo = cast(str, spec.repo)
     branch, remote_commit = resolve_repo_remote_head(repo, spec.branch)
     snapshot = build_repository_snapshot(repo, branch, remote_commit)
-    packages = resolve_packages(snapshot, spec.selectors)
+    wrap_name = spec.package_name if spec.selectors == ("*",) else None
+    packages = resolve_packages(snapshot, spec.selectors, wrap_name)
 
     return SourceState(
         spec=spec,
@@ -1043,6 +1075,13 @@ def clone_full_repository(repo: str, branch: str, destination: Path) -> None:
     run_command(command)
 
 
+def git_tracked_files(repo_dir: Path, subtree: PurePosixPath) -> tuple[str, ...]:
+    """Git-tracked files under `subtree`; excludes untracked housekeeping (.github/, __pycache__/)."""
+    subtree_str = "." if subtree == PurePosixPath(".") else subtree.as_posix()
+    output = run_command(["git", "-C", str(repo_dir), "ls-files", "--", subtree_str])
+    return tuple(line for line in output.splitlines() if line.strip())
+
+
 def stage_source(
     state: SourceState,
     repo_dir: Path,
@@ -1051,12 +1090,35 @@ def stage_source(
     staging_target = staging_root / Path(*state.spec.target.parts)
     staging_target.mkdir(parents=True, exist_ok=True)
 
+    is_root_wrap = any(p.source_path == PurePosixPath(".") for p in state.packages)
+
     for package in state.packages:
-        source = repo_dir / Path(*package.source_path.parts)
+        subtree = (
+            PurePosixPath(".")
+            if package.source_path == PurePosixPath(".")
+            else package.source_path
+        )
+
         destination = staging_target / package.name
-        if not source.is_dir():
-            fail(f"resolved skill package is not a directory: {source}")
-        shutil.copytree(source, destination, symlinks=True)
+        destination.mkdir(parents=True, exist_ok=True)
+
+        if is_root_wrap:
+            for rel in git_tracked_files(repo_dir, subtree):
+                src = repo_dir / rel
+                dest = destination / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if src.is_symlink():
+                    os.symlink(os.readlink(src), dest)
+                elif src.is_dir():
+                    os.makedirs(dest, exist_ok=True)
+                else:
+                    shutil.copy2(src, dest)
+        else:
+            shutil.copytree(
+                repo_dir / Path(*package.source_path.parts),
+                destination,
+                symlinks=True,
+            )
 
     return staging_target
 
@@ -1311,29 +1373,24 @@ def cmd_update() -> int:
 
 
 def cmd_link(destination_str: str, *, force: bool = False) -> int:
-    """严格依据所有 sources (包含远程与本地自研) 选择器解析出的激活包建立软链接。"""
     dest_path = Path(destination_str).expanduser().resolve()
     if not dest_path.exists():
         dest_path.mkdir(parents=True, exist_ok=True)
     elif not dest_path.is_dir():
         fail(f"destination exists but is not a directory: {dest_path}")
 
-    # 解析所有合法声明的源与激活包
     locked = load_lock()
     states = resolve_sources(locked)
 
-    expected_links: dict[str, Path] = {}  # link_name -> abs_pkg_path
+    expected_links: dict[str, Path] = {}
 
     for state in states:
         target_dir = (PROJECT_ROOT / state.spec.target).resolve()
-        # 仅遍历当前被 selectors (如 skills = [...]) 激活命中的包
         for package in state.packages:
             pkg_path = (target_dir / package.name).resolve()
             if not pkg_path.is_dir():
                 continue
 
-            # Prepend owner prefix when linking into flat namespace to avoid
-            # collisions between identically-named packages from different repos.
             link_name = (
                 f"{state.spec.link_namespace}-{package.name}"
                 if state.spec.link_namespace
@@ -1358,7 +1415,6 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
 
     project_root_resolved = PROJECT_ROOT.resolve()
 
-    # 清理死链或在 --force 下强制排他清理
     for entry in sorted(dest_path.iterdir()):
         entry_name = entry.name
 
@@ -1372,7 +1428,6 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
                 is_pointing_to_fskills = False
 
             if entry_name not in expected_links:
-                # 指向本项目但不再激活的旧软链默认清理；外部软链仅在 --force 时清理
                 if is_pointing_to_fskills or force:
                     print(f"  - prune link: {entry_name}")
                     entry.unlink()
@@ -1390,7 +1445,6 @@ def cmd_link(destination_str: str, *, force: bool = False) -> int:
                     f"  use --force to overwrite and remove existing non-symlink items."
                 )
 
-    # 建立软链接
     for skill_name, src_path in expected_links.items():
         link_target = dest_path / skill_name
 
